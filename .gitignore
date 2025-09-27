@@ -208,4 +208,6 @@ __marimo__/
 
 checkpoints/
 chess_env
+chess_venv
+data/
 data

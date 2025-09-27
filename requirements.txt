@@ -2,3 +2,8 @@ chess
 numpy
 torch
 pandas
+ipykernel
+zstandard
+tqdm
+joblib
+matplotlib

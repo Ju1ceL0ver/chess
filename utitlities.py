@@ -106,96 +106,21 @@ def get_dicts():
     index_to_move = {value: key for key, value in move_to_index.items()}
     return move_to_index, index_to_move
 
+class PolicyDataset:
+    def __init__(self,df,fm_cols,to_tensor_func,to_idx_dict):
+        self.fen_col,self.move_col=fm_cols
+        self.to_tensor_func=to_tensor_func
+        self.to_idx_dict=to_idx_dict
+        self.df=df[[self.fen_col,self.move_col]]
 
-class PolicyIndexDataset(Dataset):
-    """Датасет для предобучения политики на готовом DataFrame или списке.
-
-    Позволяет передавать целевые значения как готовые индексы или UCI-строки.
-    Для строк необходимо предоставить словарь `move_to_index`.
-    """
-
-    def __init__(
-        self,
-        data: Union["pd.DataFrame", Sequence[Tuple[str, Union[str, int]]]],
-        move_space_size: int,
-        one_hot: bool = True,
-        dtype: torch.dtype = torch.float32,
-        fen_column: str = "fen",
-        index_column: str = "move_index",
-        move_to_index: Optional[Dict[str, int]] = None,
-    ) -> None:
-        if move_space_size <= 0:
-            raise ValueError("move_space_size должен быть положительным числом")
-
-        self.move_space_size = move_space_size
-        self.one_hot = one_hot
-        self.dtype = dtype
-        self.move_to_index = move_to_index
-
-        if pd is not None and isinstance(data, pd.DataFrame):
-            if fen_column not in data.columns or index_column not in data.columns:
-                raise KeyError(
-                    f"DataFrame должен содержать колонки '{fen_column}' и '{index_column}'"
-                )
-            self.fens = data[fen_column].astype(str).tolist()
-            self.targets = data[index_column].tolist()
-        else:
-            self.fens = []
-            self.targets = []
-            for item in data:
-                if not isinstance(item, (tuple, list)) or len(item) != 2:
-                    raise ValueError(
-                        "Каждый элемент последовательности должен быть парой (fen, move_idx)"
-                    )
-                fen, move_idx = item
-                self.fens.append(str(fen))
-                self.targets.append(move_idx)
-
-        if len(self.fens) != len(self.targets):
-            raise ValueError("Количество FEN и целевых значений не совпадает")
-
-    def __len__(self) -> int:
-        return len(self.fens)
-
-    def __getitem__(self, item: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        fen = self.fens[item]
-        target_raw = self.targets[item]
-        move_idx = self._resolve_move_index(target_raw)
-
-        board = chess.Board(fen)
-        features = board_to_tensor(board)
-
-        if self.one_hot:
-            target = torch.zeros(self.move_space_size, dtype=self.dtype)
-            target[move_idx] = 1.0
-        else:
-            target = torch.tensor(move_idx, dtype=torch.long)
-
-        return features, target
-
-    def _resolve_move_index(self, value: Union[str, int]) -> int:
-        if isinstance(value, numbers.Integral):
-            idx = int(value)
-        elif isinstance(value, numbers.Real) and float(value).is_integer():
-            idx = int(value)
-        else:
-            text_value = str(value)
-            try:
-                idx = int(text_value)
-            except ValueError:
-                if self.move_to_index is None:
-                    raise ValueError(
-                        "Не могу преобразовать целевое значение в индекс без move_to_index"
-                    )
-                idx = self.move_to_index.get(text_value)
-                if idx is None:
-                    raise KeyError(f"Ход '{text_value}' отсутствует в move_to_index")
-
-        if idx < 0 or idx >= self.move_space_size:
-            raise ValueError(
-                f"Индекс хода {idx} выходит за границы пространства ({self.move_space_size})"
-            )
-        return idx
+    def __len__(self):
+        return len(self.df)
+    
+    def __getitem__(self,idx):
+        fen,move=self.df.iloc[idx]
+        tensor=self.to_tensor_func(chess.Board(fen))
+        move_idx=self.to_idx_dict[move]
+        return tensor,torch.tensor(move_idx,dtype=torch.long)
 
 
 def _terminal_value(board: chess.Board) -> float:
@@ -460,7 +385,7 @@ def run_alpha_beta_mcts(
     move_to_index: Dict[str, int],
     device: Optional[torch.device] = None,
     simulations: int = 256,
-    alpha_beta_depth: int = 2,
+    alpha_beta_depth: int = 7,
     temperature: float = 1.0,
     c_puct: float = 1.5,
     dirichlet_alpha: float = 0.3,
