@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, random_split
 from tqdm.auto import tqdm
 
 from models import ChessNNWithResiduals
-from utitlities import PolicyDataset, board_to_tensor, get_dicts
+from utitlities import PolicyDataset, _to_tensor_func, get_dicts
 
 
 CONFIG = {
@@ -22,25 +22,30 @@ CONFIG = {
     "batch_size": 256,
     "learning_rate": 1e-3,
     "weight_decay": 1e-4,
-    "test_split": 0.1,
+    "test_split": 0.01,
     "seed": 42,
     "num_workers": 0,
     "device": None,
-    "metrics_path": 'metrics.json',
+    "metrics_path": "metrics.json",
     "loss_plot_path": "loss_curve.png",
     "accuracy_plot_path": "accuracy_curve.png",
 }
 
 
-def resolve_device(configured: Optional[str]) -> torch.device:
+def resolve_device(configured: Optional[str] = None) -> torch.device:
     if configured is not None:
         if configured.startswith("cuda") and not torch.cuda.is_available():
             print("CUDA requested but not available. Falling back to CPU.")
+            return torch.device("cpu")
+        if configured.startswith("mps") and not torch.backends.mps.is_available():
+            print("MPS requested but not available. Falling back to CPU.")
             return torch.device("cpu")
         return torch.device(configured)
 
     if torch.cuda.is_available():
         return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
     return torch.device("cpu")
 
 
@@ -109,17 +114,16 @@ def save_metric_plot(
     _ensure_parent_dir(output_path)
     x_axis = list(range(1, epochs + 1))
     plt.figure(figsize=(8, 5))
-    plt.plot(x_axis, train_values, label='train', marker='o')
-    plt.plot(x_axis, test_values, label='test', marker='s')
-    plt.xlabel('Epoch')
+    plt.plot(x_axis, train_values, label="train", marker="o")
+    plt.plot(x_axis, test_values, label="test", marker="s")
+    plt.xlabel("Epoch")
     plt.ylabel(ylabel)
     plt.title(f"{ylabel} per epoch")
-    plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
     plt.legend()
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
-
 
 
 def run_epoch(
@@ -191,7 +195,7 @@ def main(config: dict = CONFIG) -> None:
     df["Move"] = df["Move"].astype(str)
 
     move_to_idx, _ = get_dicts()
-    dataset = PolicyDataset(df, ("FEN", "Move"), board_to_tensor, move_to_idx)
+    dataset = PolicyDataset(df, ("FEN", "Move"), _to_tensor_func, move_to_idx)
 
     train_loader, test_loader = create_dataloaders(
         dataset=dataset,
@@ -202,17 +206,13 @@ def main(config: dict = CONFIG) -> None:
         pin_memory=pin_memory,
     )
 
-    sample_planes = board_to_tensor(chess.Board())
-    in_channels = sample_planes.shape[0]
-
     model = ChessNNWithResiduals(
-        in_channels=in_channels,
+        in_channels=15,
         num_policy_outputs=len(move_to_idx),
-        num_residual_blocks=3,
-        policy_channels = 256,
-        value_hidden_dim=256,
-        use_transformer=False
-
+        num_residual_blocks=8,
+        policy_channels=512,
+        value_hidden_dim=512,
+        use_transformer=True,
     ).to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -257,21 +257,21 @@ def main(config: dict = CONFIG) -> None:
         )
 
     save_metric_plot(
-        epochs=config['epochs'],
+        epochs=config["epochs"],
         train_values=train_losses,
         test_values=test_losses,
-        ylabel='Loss',
-        output_path=config.get('loss_plot_path'),
+        ylabel="Loss",
+        output_path=config.get("loss_plot_path"),
     )
     save_metric_plot(
-        epochs=config['epochs'],
+        epochs=config["epochs"],
         train_values=train_accuracies,
         test_values=test_accuracies,
-        ylabel='Accuracy',
-        output_path=config.get('accuracy_plot_path'),
+        ylabel="Accuracy",
+        output_path=config.get("accuracy_plot_path"),
     )
 
-    if config.get('metrics_path'):
+    if config.get("metrics_path"):
         metrics = {
             "train_losses": train_losses,
             "test_losses": test_losses,

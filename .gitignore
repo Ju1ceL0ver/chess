@@ -211,3 +211,5 @@ chess_env
 chess_venv
 data/
 data
+*.ipynb
+.DS_Store

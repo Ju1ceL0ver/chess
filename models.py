@@ -87,18 +87,18 @@ class ChessNNWithResiduals(nn.Module):
     def __init__(
         self,
         in_channels: int = 15,
-        channels: int = 128,
+        channels: int = 512,
         num_residual_blocks: int = 8,
-        policy_channels: int = 32,
+        policy_channels: int = 512,
         num_policy_outputs: int = 1968,
-        value_hidden_dim: int = 256,
+        value_hidden_dim: int = 512,
         dropout: float = 0.1,
         use_squeeze_excitation: bool = True,
         squeeze_excitation_every: Optional[int] = 3,
         use_transformer: bool = True,
-        transformer_depth: int = 6,
+        transformer_depth: int = 8,
         transformer_heads: int = 12,
-        transformer_dim: int = 192,
+        transformer_dim: int = 384,
         transformer_mlp_ratio: float = 4.0,
         transformer_dropout: float = 0.1,
         board_height: int = 8,
@@ -107,7 +107,9 @@ class ChessNNWithResiduals(nn.Module):
         super().__init__()
 
         if squeeze_excitation_every is not None and squeeze_excitation_every <= 0:
-            raise ValueError("squeeze_excitation_every must be None or a positive integer")
+            raise ValueError(
+                "squeeze_excitation_every must be None or a positive integer"
+            )
 
         if board_height <= 0 or board_width <= 0:
             raise ValueError("board dimensions must be positive")
@@ -142,12 +144,16 @@ class ChessNNWithResiduals(nn.Module):
                     use_se=use_se,
                 )
             )
-        self.backbone = nn.Sequential(*residual_blocks) if residual_blocks else nn.Identity()
+        self.backbone = (
+            nn.Sequential(*residual_blocks) if residual_blocks else nn.Identity()
+        )
 
         self.use_transformer = use_transformer
         if self.use_transformer:
             if transformer_dim % transformer_heads != 0:
-                raise ValueError("transformer_dim must be divisible by transformer_heads")
+                raise ValueError(
+                    "transformer_dim must be divisible by transformer_heads"
+                )
 
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=transformer_dim,
@@ -215,7 +221,9 @@ class ChessNNWithResiduals(nn.Module):
     def _initialize_weights(self) -> None:
         for module in self.modules():
             if isinstance(module, nn.Conv2d):
-                nn.init.kaiming_normal_(module.weight, mode="fan_out", nonlinearity="relu")
+                nn.init.kaiming_normal_(
+                    module.weight, mode="fan_out", nonlinearity="relu"
+                )
             elif isinstance(module, nn.BatchNorm2d):
                 nn.init.ones_(module.weight)
                 nn.init.zeros_(module.bias)

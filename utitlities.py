@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+from tensor_chess import Position
 
 try:
     import pandas as pd
@@ -106,21 +107,22 @@ def get_dicts():
     index_to_move = {value: key for key, value in move_to_index.items()}
     return move_to_index, index_to_move
 
+
 class PolicyDataset:
-    def __init__(self,df,fm_cols,to_tensor_func,to_idx_dict):
-        self.fen_col,self.move_col=fm_cols
-        self.to_tensor_func=to_tensor_func
-        self.to_idx_dict=to_idx_dict
-        self.df=df[[self.fen_col,self.move_col]]
+    def __init__(self, df, fm_cols, to_tensor_func, to_idx_dict):
+        self.fen_col, self.move_col = fm_cols
+        self.to_tensor_func = to_tensor_func
+        self.to_idx_dict = to_idx_dict
+        self.df = df[[self.fen_col, self.move_col]]
 
     def __len__(self):
         return len(self.df)
-    
-    def __getitem__(self,idx):
-        fen,move=self.df.iloc[idx]
-        tensor=self.to_tensor_func(chess.Board(fen))
-        move_idx=self.to_idx_dict[move]
-        return tensor,torch.tensor(move_idx,dtype=torch.long)
+
+    def __getitem__(self, idx):
+        fen, move = self.df.iloc[idx]
+        tensor = self.to_tensor_func(Position(fen))
+        move_idx = self.to_idx_dict[move]
+        return tensor, torch.tensor(move_idx, dtype=torch.long)
 
 
 def _terminal_value(board: chess.Board) -> float:
@@ -128,6 +130,10 @@ def _terminal_value(board: chess.Board) -> float:
     if outcome is None or outcome.winner is None:
         return 0.0
     return 1.0 if outcome.winner == board.turn else -1.0
+
+
+def _to_tensor_func(pos):
+    return torch.frombuffer(pos.to_tensor(), dtype=torch.uint8).reshape(15, 8, 8)
 
 
 def _make_cache_key(
