@@ -206,14 +206,7 @@ def main(config: dict = CONFIG) -> None:
         pin_memory=pin_memory,
     )
 
-    model = ChessNNWithResiduals(
-        in_channels=15,
-        num_policy_outputs=len(move_to_idx),
-        num_residual_blocks=8,
-        policy_channels=512,
-        value_hidden_dim=512,
-        use_transformer=True,
-    ).to(device)
+    model = ChessNNWithResiduals().to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(

@@ -98,7 +98,7 @@ class ChessNNWithResiduals(nn.Module):
         use_transformer: bool = True,
         transformer_depth: int = 8,
         transformer_heads: int = 12,
-        transformer_dim: int = 384,
+        transformer_dim: int = 576,
         transformer_mlp_ratio: float = 4.0,
         transformer_dropout: float = 0.1,
         board_height: int = 8,

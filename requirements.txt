@@ -7,3 +7,4 @@ zstandard
 tqdm
 joblib
 matplotlib
+tensor-chess
