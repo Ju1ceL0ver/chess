@@ -1,7 +1,7 @@
 ﻿import json
 import os
 import random
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import chess
 import numpy as np
@@ -19,9 +19,9 @@ from utitlities import PolicyDataset, _to_tensor_func, get_dicts
 CONFIG = {
     "data_path": "data/processed.csv",
     "epochs": 5,
-    "batch_size": 256,
-    "learning_rate": 1e-3,
-    "weight_decay": 1e-4,
+    "batch_size": 1024,
+    "learning_rate": 3e-4,
+    "weight_decay": 1e-5,
     "test_split": 0.01,
     "seed": 42,
     "num_workers": 0,
@@ -29,6 +29,9 @@ CONFIG = {
     "metrics_path": "metrics.json",
     "loss_plot_path": "loss_curve.png",
     "accuracy_plot_path": "accuracy_curve.png",
+    "model_kwargs": {},
+    "best_model_state_path": "checkpoints/best_model_state_dict.pt",
+    "best_model_config_path": "checkpoints/best_model_config.json",
 }
 
 
@@ -126,6 +129,31 @@ def save_metric_plot(
     plt.close()
 
 
+def save_model_artifacts(
+    model: torch.nn.Module,
+    model_kwargs: Dict[str, Any],
+    state_path: Optional[str],
+    config_path: Optional[str],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    if not state_path and not config_path:
+        return
+
+    if state_path:
+        _ensure_parent_dir(state_path)
+        torch.save(model.state_dict(), state_path)
+
+    if config_path:
+        _ensure_parent_dir(config_path)
+        payload = {
+            "model_class": model.__class__.__name__,
+            "model_kwargs": model_kwargs,
+        }
+        if metadata:
+            payload["metadata"] = metadata
+        with open(config_path, "w", encoding="utf-8") as fp:
+            json.dump(payload, fp, indent=2)
+
 def run_epoch(
     model: torch.nn.Module,
     dataloader: DataLoader,
@@ -206,7 +234,13 @@ def main(config: dict = CONFIG) -> None:
         pin_memory=pin_memory,
     )
 
-    model = ChessNNWithResiduals().to(device)
+    model_kwargs_config = config.get("model_kwargs")
+    if model_kwargs_config is None:
+        model_kwargs_config = {}
+    if not isinstance(model_kwargs_config, dict):
+        raise TypeError("config['model_kwargs'] must be a dictionary if provided.")
+    model_kwargs: Dict[str, Any] = dict(model_kwargs_config)
+    model = ChessNNWithResiduals(**model_kwargs).to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
@@ -219,6 +253,9 @@ def main(config: dict = CONFIG) -> None:
     test_losses = []
     train_accuracies = []
     test_accuracies = []
+    best_test_acc = float("-inf")
+    best_test_loss = float("inf")
+    best_epoch = 0
 
     for epoch in range(1, config["epochs"] + 1):
         train_loss, train_acc = run_epoch(
@@ -248,6 +285,40 @@ def main(config: dict = CONFIG) -> None:
             f"train_loss: {train_loss:.4f} | train_acc: {train_acc:.2%} | "
             f"test_loss: {test_loss:.4f} | test_acc: {test_acc:.2%}"
         )
+
+        if test_acc > best_test_acc:
+            previous_best = best_test_acc
+            best_test_acc = test_acc
+            best_test_loss = test_loss
+            best_epoch = epoch
+
+            if previous_best == float("-inf"):
+                print(
+                    f"Initial best test accuracy: {test_acc:.2%}. Saving model checkpoint."
+                )
+            else:
+                print(
+                    f"Improved test accuracy from {previous_best:.2%} to {test_acc:.2%}. Saving model checkpoint."
+                )
+
+            state_path = config.get("best_model_state_path")
+            config_path = config.get("best_model_config_path")
+            save_model_artifacts(
+                model=model,
+                model_kwargs=model_kwargs,
+                state_path=state_path,
+                config_path=config_path,
+                metadata={
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "train_accuracy": train_acc,
+                    "test_loss": test_loss,
+                    "test_accuracy": test_acc,
+                },
+            )
+            saved_parts = [path for path in (state_path, config_path) if path]
+            if saved_parts:
+                print("Saved model artifacts to: " + ", ".join(saved_parts))
 
     save_metric_plot(
         epochs=config["epochs"],
@@ -280,6 +351,11 @@ def main(config: dict = CONFIG) -> None:
     print("test_losses =", test_losses)
     print("train_accuracies =", train_accuracies)
     print("test_accuracies =", test_accuracies)
+    if best_epoch > 0:
+        print(
+            f"Best test accuracy {best_test_acc:.2%} "
+            f"achieved at epoch {best_epoch} with loss {best_test_loss:.4f}."
+        )
 
 
 if __name__ == "__main__":
